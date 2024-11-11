@@ -11,8 +11,9 @@ st.write("This app allows you to cluster and merge data based on similarity metr
 # Option for Input Type: Upload CSV or Enter Data Manually
 input_option = st.radio("Choose Input Method", ("Upload CSV", "Enter Data Manually"))
 
-# Initialize DataFrame as None initially
-df = None
+# Initialize DataFrame in session state
+if 'df' not in st.session_state:
+    st.session_state.df = None
 
 @st.cache_data
 def clean_text(text):
@@ -43,6 +44,7 @@ if input_option == "Upload CSV":
         df["Producername"] = df["Producername"].apply(clean_text)
         df["Subproducername"] = df["Subproducername"].apply(clean_text)
         df["subproduceraddress"] = df["subproduceraddress"].apply(clean_text)
+        st.session_state.df = df
 
 elif input_option == "Enter Data Manually":
     st.write("Enter your data below. Add multiple rows separated by commas.")
@@ -62,8 +64,12 @@ elif input_option == "Enter Data Manually":
                 "Subproducername": subproducers,
                 "subproduceraddress": addresses
             })
+            st.session_state.df = df  # Store the DataFrame in session state
         else:
             st.error("Please ensure all fields have the same number of entries.")
+
+# Load the DataFrame from session state
+df = st.session_state.df
 
 # Proceed if DataFrame is not None
 if df is not None:
