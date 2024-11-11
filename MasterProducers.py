@@ -5,20 +5,56 @@ from rapidfuzz import fuzz
 import textdistance
 
 # Streamlit App Title
-# This is just an example on how to use streamlit
 st.title("Data Clustering & Mastering App")
 st.write("This app allows you to cluster and merge data based on similarity metrics. Adjust the thresholds, weights, and algorithms below to control the clustering behavior.")
 
-# File Upload
-uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
-if uploaded_file is not None:
-    df = pd.read_csv(uploaded_file)
-    
-    # Convert columns to uppercase for case insensitivity
-    df["Producername"] = df["Producername"].str.upper()
-    df["Subproducername"] = df["Subproducername"].str.upper()
-    df["subproduceraddress"] = df["subproduceraddress"].str.upper()
+# Option for Input Type: Upload CSV or Enter Data Manually
+input_option = st.radio("Choose Input Method", ("Upload CSV", "Enter Data Manually"))
 
+# Function to clean and standardize text inputs
+def clean_text(text):
+    if pd.isna(text):
+        return ""
+    return text.strip().upper()
+
+# Initialize the DataFrame
+df = None
+
+# Upload CSV Option
+if input_option == "Upload CSV":
+    uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
+    if uploaded_file:
+        df = pd.read_csv(uploaded_file)
+        # Convert columns to uppercase for case insensitivity
+        df["Producername"] = df["Producername"].apply(clean_text)
+        df["Subproducername"] = df["Subproducername"].apply(clean_text)
+        df["subproduceraddress"] = df["subproduceraddress"].apply(clean_text)
+
+# Manual Data Entry Option
+elif input_option == "Enter Data Manually":
+    st.write("Enter your data below. Add multiple rows separated by commas.")
+    producer_input = st.text_area("Enter Producername (separated by commas)", "")
+    subproducer_input = st.text_area("Enter Subproducername (separated by commas)", "")
+    address_input = st.text_area("Enter Address (separated by commas)", "")
+
+    if st.button("Submit Data"):
+        # Convert input data to lists
+        producers = [clean_text(x) for x in producer_input.split(",")]
+        subproducers = [clean_text(x) for x in subproducer_input.split(",")]
+        addresses = [clean_text(x) for x in address_input.split(",")]
+
+        # Check if all lists are of the same length
+        if len(producers) == len(subproducers) == len(addresses):
+            df = pd.DataFrame({
+                "Producername": producers,
+                "Subproducername": subproducers,
+                "subproduceraddress": addresses
+            })
+        else:
+            st.error("Please ensure all fields have the same number of entries.")
+
+# Proceed if DataFrame is available
+if df is not None:
     # Initialize ClusterId column with NaN
     df['ClusterId'] = np.nan
 
@@ -58,14 +94,7 @@ if uploaded_file is not None:
         {'column': "subproduceraddress", "algorithm": algorithms[address_algorithm], "threshold": address_threshold, "weight": address_weight}
     ]
 
-    # Create a blocking key
     df['BlockKey'] = df['Producername'].str[:5] + df['Subproducername'].str[:5]
-
-    for conf in config:
-        match_score_col = f"{conf['column']}MatchScore"
-        df[match_score_col] = np.nan  # Initialize with NaN
-
-    df['WeightedScore'] = np.nan
 
     # Function to calculate match score
     def calculate_match_score(value1, value2, algorithm):
@@ -80,77 +109,31 @@ if uploaded_file is not None:
         else:
             raise ValueError(f"Unknown algorithm: {algorithm}")
 
-    # Function to assign clusters within each block
-    def assign_cluster_ids_block(block_df, config, final_threshold, start_cluster_id):
-        block_df = block_df.reset_index(drop=True)
-        current_cluster_id = start_cluster_id
-
-        for i in range(len(block_df)):
-            if pd.isna(block_df.at[i, "ClusterId"]):
-                block_df.at[i, "ClusterId"] = current_cluster_id
-                for j in range(i + 1, len(block_df)):
-                    weighted_score_sum = 0
+    # Assign clusters
+    def assign_cluster_ids(df, config, final_threshold):
+        cluster_id = 0
+        for i in range(len(df)):
+            if pd.isna(df.at[i, "ClusterId"]):
+                df.at[i, "ClusterId"] = cluster_id
+                for j in range(i + 1, len(df)):
+                    total_score = 0
                     total_weight = 0
-
                     for conf in config:
-                        column = conf["column"]
-                        algorithm = conf["algorithm"]
-                        threshold = conf["threshold"]
-                        weight = conf["weight"]
+                        score = calculate_match_score(df.at[i, conf['column']], df.at[j, conf['column']], conf['algorithm'])
+                        if score >= conf['threshold']:
+                            total_score += score * conf['weight']
+                        total_weight += conf['weight']
+                    if total_weight > 0 and (total_score / total_weight) >= final_threshold:
+                        df.at[j, "ClusterId"] = cluster_id
+                cluster_id += 1
+        return df
 
-                        match_score = calculate_match_score(block_df.at[i, column], block_df.at[j, column], algorithm)
+    df = assign_cluster_ids(df, config, final_threshold)
 
-                        if match_score >= threshold:
-                            weighted_score_sum += match_score * weight
-                        total_weight += weight
-
-                    if total_weight > 0:
-                        final_weighted_score = weighted_score_sum / total_weight
-
-                        if final_weighted_score >= final_threshold:
-                            block_df.at[j, "ClusterId"] = block_df.at[i, "ClusterId"]
-                            block_df.at[j, "WeightedScore"] = final_weighted_score
-                current_cluster_id += 1
-        return block_df, current_cluster_id
-
-    # Process each block
-    unique_blocks = df['BlockKey'].unique()
-    start_cluster_id = 0
-    processed_blocks = []
-
-    for key in unique_blocks:
-        block_df = df[df['BlockKey'] == key]
-        processed_block, start_cluster_id = assign_cluster_ids_block(block_df, config, final_threshold, start_cluster_id)
-        processed_blocks.append(processed_block)
-
-    df = pd.concat(processed_blocks, ignore_index=True)
-
-    # Display the results
+    # Display the clustered data
     st.write("Clustered Data:")
     st.dataframe(df)
-    
-    # Merge rows into a single row per cluster
-    def merge_clusters(df):
-        merged_data = []
-        for cluster_id in df["ClusterId"].unique():
-            cluster_df = df[df["ClusterId"] == cluster_id]
-            merged_row = {
-                'ClusterId': cluster_id,
-                'Producername': cluster_df['Producername'].iloc[0],
-                'Subproducername': cluster_df['Subproducername'].iloc[0],
-                'subproduceraddress': cluster_df['subproduceraddress'].iloc[0]
-            }
-            merged_data.append(merged_row)
-        return pd.DataFrame(merged_data)
 
-    merged_df = merge_clusters(df)
-    
-    st.write("Merged Master Data:")
-    st.dataframe(merged_df)
-
-    # Download buttons
-    clustered_csv = df.to_csv(index=False).encode('utf-8')
-    merged_csv = merged_df.to_csv(index=False).encode('utf-8')
-
-    st.download_button("Download Clustered Data", clustered_csv, "clustered_data.csv", "text/csv")
-    st.download_button("Download Merged Data", merged_csv, "merged_data.csv", "text/csv")
+    # Download the results
+    csv = df.to_csv(index=False).encode('utf-8')
+    st.download_button("Download Clustered Data", csv, "clustered_data.csv", "text/csv")
