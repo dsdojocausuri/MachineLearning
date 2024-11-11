@@ -5,6 +5,7 @@ from rapidfuzz import fuzz
 import textdistance
 
 # Streamlit App Title
+# This is just an example on how to use streamlit
 st.title("Data Clustering & Mastering App")
 st.write("This app allows you to cluster and merge data based on similarity metrics. Adjust the thresholds, weights, and algorithms below to control the clustering behavior.")
 
