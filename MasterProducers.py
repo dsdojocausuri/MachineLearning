@@ -16,9 +16,9 @@ def clean_text(text):
 def damerau_levenshtein_score(value1, value2):
     return textdistance.damerau_levenshtein.normalized_similarity(value1, value2)
 
-# Function to calculate n-gram similarity using textdistance
-def ngram_similarity(value1, value2):
-    return textdistance.ngram.normalized_similarity(value1, value2)
+# Function to calculate cosine similarity using textdistance
+def cosine_similarity_score(value1, value2):
+    return textdistance.cosine.normalized_similarity(value1, value2)
 
 # Function to convert DataFrame to CSV for download
 def convert_df_to_csv(df):
@@ -54,7 +54,7 @@ if df is not None:
     subproducer_threshold = st.sidebar.slider("Subproducername Threshold", 0.0, 1.0, 0.85)
     address_threshold = st.sidebar.slider("Address Threshold", 0.0, 1.0, 0.85)
 
-    # Function to assign clusters
+    # Function to assign clusters based on thresholds
     def assign_clusters(df, producer_threshold, subproducer_threshold, address_threshold):
         df['ClusterId'] = np.nan
         cluster_id = 0
@@ -66,7 +66,7 @@ if df is not None:
                     # Calculate similarity scores
                     producer_score = fuzz.ratio(df.at[i, 'Producername'], df.at[j, 'Producername']) / 100
                     subproducer_score = fuzz.token_sort_ratio(df.at[i, 'Subproducername'], df.at[j, 'Subproducername']) / 100
-                    address_score = ngram_similarity(df.at[i, 'subproduceraddress'], df.at[j, 'subproduceraddress'])
+                    address_score = cosine_similarity_score(df.at[i, 'subproduceraddress'], df.at[j, 'subproduceraddress'])
 
                     # Assign to cluster if above thresholds
                     if (producer_score >= producer_threshold and 
